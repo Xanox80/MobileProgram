@@ -312,13 +312,6 @@ export const SettingsScreen: React.FC<Props> = ({ navigation }) => {
             type="button"
             onPress={() => navigation.navigate('Calendar')}
           />
-          <SettingItem
-            title="Розцінка по відстані"
-            subtitle="Вартість доставки"
-            icon="💰"
-            type="button"
-            onPress={() => navigation.navigate('Pricing')}
-          />
         </View>
 
         <View style={styles.section}>

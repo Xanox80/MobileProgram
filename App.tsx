@@ -25,7 +25,6 @@ import { StatisticsScreen } from './src/screens/StatisticsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { CalendarScreen } from './src/screens/CalendarScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
-import { PricingScreen } from './src/screens/PricingScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type RootStackParamList = {
@@ -39,7 +38,6 @@ export type RootStackParamList = {
   Settings: undefined;
   Calendar: undefined;
   Onboarding: undefined;
-  Pricing: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -96,40 +94,35 @@ function AppContent() {
     if (__DEV__) {
       try {
         const { testApiConnection, testSendAddress } = require('./src/services/apiTest');
-        const globalObj = globalThis as any;
-        globalObj.testApiConnection = testApiConnection;
-        globalObj.testSendAddress = testSendAddress;
+        (global as any).testApiConnection = testApiConnection;
+        (global as any).testSendAddress = testSendAddress;
         console.log('🔧 Test functions available: testApiConnection(), testSendAddress("address")');
       } catch (error) {
         // Ignore
       }
     }
 
-    // Initialize notifee notification service
-    const initNotifee = async () => {
+    const requestNotificationPermission = async () => {
       try {
-        const { notifeeNotificationService } = require('./src/services/notifeeNotificationService');
-        await notifeeNotificationService.initialize();
-        console.log('✅ Notifee notification service initialized');
+        const messaging = require('@react-native-firebase/messaging').default;
+        const authStatus = await messaging().requestPermission();
+        const enabled =
+          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+        if (enabled) {
+          console.log('✅ Notification permission enabled');
+        } else {
+          console.warn('⚠️ Notification permission denied');
+        }
       } catch (error) {
-        console.warn('Notifee initialization error:', error);
+        console.warn(
+          'Firebase permission request skipped (this is OK if Firebase is not configured)',
+        );
       }
     };
 
-    initNotifee();
-
-    // Ініціалізація локального background notification service
-    // Генерує сповіщення безпосередньо з програми, навіть коли вона закрита
-    const initLocalBackgroundNotifications = async () => {
-      try {
-        const { localBackgroundNotificationService } = require('./src/services/localBackgroundNotifications');
-        await localBackgroundNotificationService.initialize();
-        console.log('✅ Local background notification service initialized');
-      } catch (error) {
-        console.warn('Local background notification service initialization error:', error);
-      }
-    };
-    initLocalBackgroundNotifications();
+    requestNotificationPermission();
 
     AsyncStorage.getItem('@onboarding_shown').then(value => {
       setShowOnboarding(value !== 'true');
@@ -141,29 +134,41 @@ function AppContent() {
     setShowOnboarding(false);
   };
   useEffect(() => {
-    let localBackgroundInterval: number | null = null;
+    let updateInterval: number | null = null;
 
-    // Запустити локальний background service для періодичної перевірки
-    // (коли додаток на передньому плані)
-    const initLocalBackground = async () => {
+    const initFirebase = async () => {
       try {
-        const { localBackgroundNotificationService } = require('./src/services/localBackgroundNotifications');
-        // Запустити періодичну перевірку для тестування (коли додаток активний)
-        localBackgroundNotificationService.startPeriodicCheck();
+        const {
+          firebaseNotificationService,
+        } = require('./src/services/firebaseNotifications');
+        await firebaseNotificationService.initialize().catch((error: any) => {
+          console.warn(
+            'Firebase initialization skipped (this is OK):',
+            error?.message || error,
+          );
+        });
+
+        updateInterval = setInterval(() => {
+          try {
+            firebaseNotificationService
+              .processDeliveryUpdates()
+              .catch(() => {});
+          } catch (error) {
+            // Ignore any errors
+          }
+        }, 10000);
       } catch (error) {
-        console.warn('Local background service periodic check error:', error);
+        console.warn('Firebase service not available (this is OK)');
       }
     };
+    
     setTimeout(() => {
-      initLocalBackground();
-    }, 2000);
+      initFirebase();
+    }, 100);
 
     return () => {
-      try {
-        const { localBackgroundNotificationService } = require('./src/services/localBackgroundNotifications');
-        localBackgroundNotificationService.stopPeriodicCheck();
-      } catch (error) {
-        // Ignore
+      if (updateInterval) {
+        clearInterval(updateInterval);
       }
     };
   }, []);
@@ -305,13 +310,6 @@ function AppContent() {
             component={CalendarScreen}
             options={{
               title: 'Календар доставок',
-            }}
-          />
-          <Stack.Screen
-            name="Pricing"
-            component={PricingScreen}
-            options={{
-              title: 'Розцінка',
             }}
           />
         </Stack.Navigator>

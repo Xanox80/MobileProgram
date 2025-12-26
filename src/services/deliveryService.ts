@@ -114,22 +114,15 @@ export const deliveryService = {
     await this.addHistoryEntry(delivery.id, 'pending', 'Замовлення створено');
     notificationService.showDeliveryUpdate(delivery);
 
-    // Запланувати сповіщення про час перекусити через notifee
     try {
-      const { notifeeNotificationService } = require('./notifeeNotificationService');
-      await notifeeNotificationService.scheduleSnackTimeReminder(delivery);
-    } catch (error) {
-      console.warn('Notifee notification scheduling skipped:', error);
-    }
-
-    // Запланувати локальні background сповіщення (працюють навіть коли додаток закритий)
-    try {
-      const { localBackgroundNotificationService } = require('./localBackgroundNotifications');
-      await localBackgroundNotificationService
-        .scheduleNotificationsForDeliveries()
+      const {
+        firebaseNotificationService,
+      } = require('./firebaseNotifications');
+      await firebaseNotificationService
+        .scheduleDeliveryCompletionNotification(delivery)
         .catch(() => {});
     } catch (error) {
-      console.warn('Local background notification scheduling skipped:', error);
+      console.warn('Firebase notification scheduling skipped');
     }
 
     await this.startAutoProgress(delivery.id);
